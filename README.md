@@ -5,7 +5,7 @@
 一个基于 **Gradio** 和 **Google GenAI SDK** 构建的轻量级图形界面，专为测试和使用 Google Vertex AI 最新的 **Gemini 3 Pro Image** (Nano Banana) 模型而设计。
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![Gradio](https://img.shields.io/badge/Gradio-5.9.1-orange)
+![Gradio](https://img.shields.io/badge/Gradio-5.23.2-orange)
 ![Vertex AI](https://img.shields.io/badge/Google-Vertex%20AI-4285F4)
 
 ## ✨ 主要特性
@@ -27,7 +27,7 @@
 * conda activate banana
 ### **3. 安装依赖**
 * pip install -r requirements.txt
-* pip install gradio==5.9.1 google-genai==1.53 gradio-client protobuf google-api-core google-auth google-cloud-core googleapis-common-protos websockets Pillow requests numpy aiohttp
+* pip install gradio==5.23.2 google-genai==1.53 gradio-client protobuf google-api-core google-auth google-cloud-core googleapis-common-protos websockets Pillow requests numpy aiohttp
 
 
 ### **4.🔑 配置认证**
