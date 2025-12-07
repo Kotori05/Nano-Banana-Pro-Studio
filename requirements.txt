@@ -1,0 +1,15 @@
+
+gradio==5.9.1
+google-genai==1.53.0
+gradio-client
+protobuf
+google-api-core
+google-auth
+google-cloud-core
+googleapis-common-protos
+websockets
+Pillow 
+requests 
+numpy 
+aiohttp
+
