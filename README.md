@@ -17,6 +17,8 @@
     * **个人级**：支持 API Key (AI Studio / Vertex Express 模式)。
 * **📝 配置模板**：内置快捷模板，支持自定义保存常用参数预设。
 * **🖼️ 多模态交互**：支持“图生图”和多图融合指令。
+  
+<img width="2271" height="1996" alt="image" src="https://github.com/user-attachments/assets/de815daf-3536-44f7-aca5-defd8c2db626" />
 
 ## 📦 安装指南
 ### **1. 克隆仓库**
