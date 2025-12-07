@@ -1,3 +1,26 @@
+# 千万不要把你的密钥上传到 GitHub。请确保你的根目录下有这个文件。
+
+```text
+# 忽略 Python 缓存和虚拟环境
+__pycache__/
+*.pyc
+venv/
+.env
+.ipynb_checkpoints/
+
+# 忽略 IDE 配置
+.vscode/
+.idea/
+
+# ⚠️ 绝对不要上传密钥文件！！！
+GOOGLE_CLOUD_API_KEY.json
+GOOGLE_CLOUD_API_KEY.txt
+service_account.json
+*.json
+
+# 忽略生成的图片输出文件夹
+outputs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
