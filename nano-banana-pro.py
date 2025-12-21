@@ -34,9 +34,107 @@ import os
 from pathlib import Path
 import json
 
+import re
+from datetime import datetime
+from PIL import Image
+
+import uuid
+from datetime import datetime
+import socket
+
+from pprint import pprint
+import importlib.util
+import sys
+
 # 预设配置文件路径
 CONFIG_PATH = Path("config.json")
 
+# 动态加载插件
+def load_plugins_from_dir(plugin_dir: str = "plugins"):
+    """
+    动态扫描指定目录，加载包含 create_tab 函数的插件
+    """
+    if not os.path.exists(plugin_dir):
+        print(f"[INFO] 插件目录 {plugin_dir} 不存在，已跳过。")
+        return
+
+    # 遍历目录下的 .py 文件
+    for filename in os.listdir(plugin_dir):
+        if filename.endswith(".py") and not filename.startswith("__"):
+            file_path = os.path.join(plugin_dir, filename)
+            module_name = filename[:-3] # 去掉 .py
+            
+            try:
+                # 动态加载模块
+                spec = importlib.util.spec_from_file_location(module_name, file_path)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+                    
+                    # 检查是否存在 create_tab 函数
+                    if hasattr(module, "create_tab") and callable(module.create_tab):
+                        print(f"[PLUGIN] 正在加载插件: {filename} ...")
+                        # 执行插件构建逻辑
+                        module.create_tab()
+                    else:
+                        print(f"[PLUGIN] 跳过 {filename}: 未找到 'create_tab' 函数")
+            except Exception as e:
+                print(f"[ERROR] 加载插件 {filename} 失败: {e}")
+
+# 打印请求报文
+def _debug_print_send(model_name, system_instruction, user_text, image_files, generate_config=None, contents=None):
+    print("\n" + "=" * 80)
+    print("[SEND] Gemini Request")
+    print("Model:", model_name)
+
+    if system_instruction:
+        print("\n[System Instruction]\n", system_instruction)
+
+    if user_text:
+        print("\n[User Text]\n", user_text)
+
+    if image_files:
+        print("\n[User Images]")
+        for i, img in enumerate(image_files):
+            p = img.name if hasattr(img, "name") else img
+            print(f"  [{i}] {p}")
+
+    if contents is not None:
+        print("\n[Contents]")
+        pprint(contents)
+
+    if generate_config is not None:
+        print("\n[Generate Config]")
+        # google-genai 的对象通常有 model_dump；没有就 pprint
+        try:
+            pprint(generate_config.model_dump())
+        except Exception:
+            pprint(generate_config)
+
+    print("=" * 80 + "\n")
+
+# 打印接受报文
+def _debug_print_recv(response):
+    import json
+    print("\n" + "=" * 80)
+    print("[RECV] Gemini Response")
+    try:
+        print(json.dumps(response.model_dump(), ensure_ascii=False, indent=2))
+    except Exception:
+        pprint(response)
+    print("=" * 80 + "\n")
+
+def find_free_port(start: int = 7860, end: int = 7880, host: str = "127.0.0.1") -> int:
+    for port in range(start, end + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host, port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(f"No free port found in range {start}-{end}")
 
 def load_presets_from_config() -> Dict[str, Any]:
     """
@@ -211,7 +309,9 @@ ASPECT_RATIO_OPTIONS = [
     "5:4 老屏幕4608x3712",
     "9:16 人像3072x5504",
     "16:9 风景5504x3072",
-    "21:9 超宽屏6336x2688", # 电影级宽屏 
+    "21:9 超宽屏6336x2688"
+    ]
+# 电影级宽屏 
 # """
 # 1:1       1024x1024	1210	2048x2048	1210	4096x4096	2000
 # 2:3	    848x1264	1210	1696x2528	1210	3392x5056	2000
@@ -224,7 +324,7 @@ ASPECT_RATIO_OPTIONS = [
 # 16:9	    1376x768	1210	2752x1536	1210	5504x3072	2000
 # 21:9	    1584x672	1210	3168x1344	1210	6336x2688	2000
 # """
-]
+
 
 IMAGE_SIZE_OPTIONS = [
     "1K",
@@ -264,7 +364,7 @@ def create_client(explicit_key: str | None = None, project: str | None = None, l
             print(f"[WARN] Vertex AI Client 初始化失败 ({e})，尝试降级到 API Key 模式...")
     
     # === 尝试 2: API Key (AI Studio) ===
-    # 走到这里说明：要么没 Project ID，要么 Vertex 初始化挂了
+    # 跑到这里说明：要么没 Project ID，要么 Vertex 初始化挂了 
     if api_key:
         print("[INFO] 使用 API Key 模式 (AI Studio)")
         return genai.Client(
@@ -316,6 +416,7 @@ def build_generate_config(
     image_size_ui: str,
     want_image: bool,
     want_thinking: bool,
+    want_search: bool,
 ) -> types.GenerateContentConfig:
     """
     构造 GenerateContentConfig。
@@ -338,6 +439,9 @@ def build_generate_config(
         max_output_tokens=max_output_tokens,
         safety_settings=safety_settings,
     )
+    # === Google Search / Grounding ===
+    if want_search:
+        cfg_kwargs["tools"] = [{"google_search": {}}]
 
     # === 图像模型：参考 Nano-Banana Pro 示例，带上 aspect_ratio + image_size ===
     if want_image:
@@ -391,6 +495,185 @@ def file_to_image_part(path: str) -> types.Part:
         data = f.read()
     return types.Part.from_bytes(data=data, mime_type=mime)
 
+def _save_as_jpg_under_1mb(src_path: str, dst_path: str, max_bytes: int = 1024 * 1024) -> None:
+    """
+    把 src_path 转成 JPG 保存到 dst_path，并尽量保证文件 <= max_bytes（默认 1MB）。
+    """
+    img = Image.open(src_path)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    else:
+        img = img.convert("RGB")
+
+    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+
+    # 先调质量；不行再缩放
+    quality = 92
+    width, height = img.size
+
+    while True:
+        img.save(dst_path, format="JPEG", quality=quality, optimize=True)
+        if os.path.getsize(dst_path) <= max_bytes:
+            return
+
+        quality -= 8
+        if quality >= 40:
+            continue
+
+        # quality 已经很低了，开始缩放
+        scale = 0.85
+        new_w = max(256, int(width * scale))
+        new_h = max(256, int(height * scale))
+        if new_w == width and new_h == height:
+            # 已经缩不动了，直接保存（可能略超 1MB）
+            img.save(dst_path, format="JPEG", quality=40, optimize=True)
+            return
+
+        img = img.resize((new_w, new_h))
+        width, height = img.size
+        quality = 88
+
+def _ensure_export_session_dir(out_dir: str = "exports", base_name: str = "chat_session") -> str:
+    os.makedirs(out_dir, exist_ok=True)
+    sid = f"{base_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    session_dir = os.path.join(out_dir, sid)
+    os.makedirs(os.path.join(session_dir, "images"), exist_ok=True)
+    md_path = os.path.join(session_dir, "chat.md")
+    if not os.path.exists(md_path):
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(f"# Chat Log\n\n- Session: {sid}\n- Created: {datetime.now().isoformat(timespec='seconds')}\n")
+    return session_dir
+
+def _append_md(md_path: str, text: str) -> None:
+    with open(md_path, "a", encoding="utf-8") as f:
+        f.write(text if text.endswith("\n") else text + "\n")
+
+def log_turn_to_md(
+    session_dir: str,
+    user_text: str,
+    user_image_paths: list[str],
+    assistant_text: str,
+    assistant_image_paths: list[str],
+) -> str:
+    """
+    追加记录一轮对话到 exports/<session>/chat.md
+    图片会被转换成 <=1MB jpg，保存到 images/ 下。
+    返回 session_dir（用于 state 保持）。
+    """
+    if not session_dir:
+        session_dir = _ensure_export_session_dir()
+
+    images_dir = os.path.join(session_dir, "images")
+    md_path = os.path.join(session_dir, "chat.md")
+
+    def _conv_many(paths: list[str], prefix: str) -> list[str]:
+        rels = []
+        for p in (paths or []):
+            if not p or not os.path.exists(p):
+                continue
+            # 生成唯一文件名
+            name = f"{datetime.now().strftime('%H%M%S')}_{uuid.uuid4().hex[:6]}_{prefix}.jpg"
+            dst_abs = os.path.join(images_dir, name)
+            _save_as_jpg_under_1mb(p, dst_abs, max_bytes=1024 * 1024)
+            rels.append(f"images/{name}")
+        return rels
+
+    user_imgs_rel = _conv_many(user_image_paths, "u")
+    asst_imgs_rel = _conv_many(assistant_image_paths, "a")
+
+    ts = datetime.now().isoformat(timespec="seconds")
+    block = []
+    block.append("\n---\n")
+    block.append(f"## Turn @ {ts}\n")
+
+    block.append("### User\n")
+    if user_text:
+        block.append(user_text.strip() + "\n")
+    for rel in user_imgs_rel:
+        block.append(f"\n![]({rel})\n")
+
+    block.append("\n### Assistant\n")
+    if assistant_text:
+        block.append(assistant_text.strip() + "\n")
+    for rel in asst_imgs_rel:
+        block.append(f"\n![]({rel})\n")
+
+    _append_md(md_path, "\n".join(block))
+    return session_dir
+
+def export_chat_to_md(
+    history: List[dict],
+    out_base_name: str = "chat_export",
+    out_dir: str = "exports",
+) -> str:
+    """
+    导出当前 Chatbot(history type="messages") 为 Markdown。
+    如果内容里引用了图片路径：把它们转为 <=1MB 的 jpg，放到 exports/<name>/images/ 下，并替换 md 引用。
+    返回导出的 md 文件路径。
+    """
+    safe_name = (out_base_name or "chat_export").strip() or "chat_export"
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", safe_name)
+
+    export_root = os.path.join(out_dir, safe_name)
+    images_dir = os.path.join(export_root, "images")
+    os.makedirs(images_dir, exist_ok=True)
+
+    # 匹配 markdown 图片：![alt](path)
+    img_pat = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+    used_map = {}  # src_path -> new_rel_path
+    img_counter = 0
+
+    def _convert_one(src: str) -> str:
+        nonlocal img_counter
+        src_norm = src.strip().strip('"').strip("'")
+        src_norm = src_norm.replace("\\", "/")
+        if src_norm in used_map:
+            return used_map[src_norm]
+
+        if not os.path.exists(src_norm):
+            # 找不到就原样返回
+            return src
+
+        img_counter += 1
+        dst_name = f"{img_counter}.jpg"
+        dst_abs = os.path.join(images_dir, dst_name)
+        _save_as_jpg_under_1mb(src_norm, dst_abs, max_bytes=1024 * 1024)
+
+        rel = f"images/{dst_name}"
+        used_map[src_norm] = rel
+        return rel
+
+    lines = []
+    lines.append(f"# Chat Export\n\n- Exported: {datetime.now().isoformat(timespec='seconds')}\n")
+
+    for msg in (history or []):
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+
+        # 替换图片引用为导出目录下的 images/xxx.jpg
+        def _repl(m):
+            path = m.group(1)
+            new_rel = _convert_one(path)
+            return m.group(0).replace(path, new_rel)
+
+        content2 = img_pat.sub(_repl, content)
+
+        if role == "user":
+            lines.append("\n## User\n")
+        elif role == "assistant":
+            lines.append("\n## Assistant\n")
+        else:
+            lines.append(f"\n## {role}\n")
+
+        lines.append(content2.strip() + "\n")
+
+    md_path = os.path.join(export_root, f"{safe_name}.md")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    return md_path
+
 
 # ========== 主业务逻辑：调用 Gemini（Vertex AI） ==========
 def call_gemini_vertex(
@@ -406,6 +689,7 @@ def call_gemini_vertex(
     top_p: float,
     top_k: int,
     max_output_tokens: int,
+    enable_search: bool,
 ) -> Tuple[str, List[str]]:  # <--- 修改返回值类型提示
     """
     修改后：返回 (文本内容, 生成的图片路径列表)
@@ -446,6 +730,15 @@ def call_gemini_vertex(
         temperature=temperature, top_p=top_p, top_k=top_k, max_output_tokens=max_output_tokens,
         aspect_ratio_ui=aspect_ratio, image_size_ui=image_size,
         want_image=want_image, want_thinking=want_thinking,
+        want_search=bool(enable_search),
+    )
+    
+    _debug_print_send(
+        model_name=model_name,
+        system_instruction=system_instruction,
+        user_text=user_text,
+        image_files=user_images,
+        generate_config=generate_config,
     )
 
 # 4) 调用
@@ -459,6 +752,8 @@ def call_gemini_vertex(
         raise RuntimeError(f"调用 Vertex Gemini 失败：{e}")
 
     # 5) 解析结果 (🛠️ 增强调试版)
+    _debug_print_recv(response) # 打印响应
+
     text_chunks = []
     generated_images = []
 
@@ -528,12 +823,14 @@ def gr_chat_send(
     api_key: str, 
     model_name: str,
     aspect_ratio: str, image_size: str, temperature: float, top_p: float, top_k: int, max_output_tokens: int, system_instruction: str,
+    enable_search: bool,
+    session_dir,
 ):
     user_input = (user_input or "").strip()
     image_files = image_files or []
 
     if not user_input and not image_files:
-        return history, raw_messages, "", None
+        return history, raw_messages, "", None, session_dir
 
     # ===== 1. 用户消息上屏 (核心修改) =====
     # 策略：不再构建 {"type": "image"} 字典，而是把图片转为 Markdown 文本
@@ -555,7 +852,7 @@ def gr_chat_send(
     # ===== 2. 记录原始消息 (传给 API 用，保持原样) =====
     # 这里依然保留 structured 格式，因为 Gemini API 需要区分 text 和 image
     raw_messages.append({"role": "user", "text": user_input, "images": image_files.copy()})
-
+    
     # ===== 3. 调用 API =====
     try:
         reply_text, generated_images = call_gemini_vertex(
@@ -565,6 +862,7 @@ def gr_chat_send(
             aspect_ratio=aspect_ratio, image_size=image_size,
             system_instruction=system_instruction,
             temperature=float(temperature), top_p=float(top_p), top_k=int(top_k), max_output_tokens=int(max_output_tokens),
+            enable_search=bool(enable_search),
         )
     except Exception as e:
         import traceback
@@ -586,7 +884,16 @@ def gr_chat_send(
         "role": "assistant",
         "content": display_text,
     })
-
+    
+    session_dir_new = log_turn_to_md(
+        session_dir,                 # 来自 gr.State
+        user_text=user_input,
+        user_image_paths=image_files,
+        assistant_text=reply_text,
+        assistant_image_paths=generated_images or [],
+    )
+    
+    # ===== 5. 记录原始助手消息 =====
     # 原始记录 (无图，因为我们不把生成图作为下一轮输入)
     raw_messages.append({
         "role": "model",
@@ -594,11 +901,10 @@ def gr_chat_send(
         "images": [], 
     })
 
-    return history, raw_messages, "", None
+    return history, raw_messages, "", None, session_dir_new
 
 def gr_clear(history, raw_messages):
     return [], []
-
 
 # ========== 搭建 Gradio UI ==========
 
@@ -632,211 +938,228 @@ def create_gradio_app() -> gr.Blocks:
             "# 🍌 Banana Studio - Vertex AI 版\n"
             "使用 `google.genai` 调用 Gemini（Vertex AI 端点），安全过滤全部关闭（OFF，仅用于测试）。"
         )
-
-        raw_messages_state = gr.State([])  # 保存原始结构 [{'role', 'text', 'images'}, ...]
-
-        with gr.Row():
-            # ===== 左侧：参数区 =====
-            with gr.Column(scale=1, min_width=320):
-                gr.Markdown("### ⚙️ 设置面板")
-
-                api_key = gr.Textbox(
-                    label="GOOGLE_CLOUD_API_KEY（留空则使用环境变量）",
-                    value=os.environ.get("GOOGLE_CLOUD_API_KEY", ""),
-                    type="password",
-                )
-
-                model_name = gr.Dropdown(
-                    label="模型",
-                    choices=DEFAULT_MODEL_OPTIONS,
-                    value=default_model,
-                )
-
-                aspect_ratio = gr.Dropdown(
-                    label="图像宽高比（用于 image_config，仅当前示例中传给配置）",
-                    choices=ASPECT_RATIO_OPTIONS,
-                    value=default_aspect,
-                )
-
-                image_size = gr.Dropdown(
-                    label="图像尺寸（image_size，例如 1K / 512 / 2K）",
-                    choices=IMAGE_SIZE_OPTIONS,
-                    value=default_image_size,
-                )
-
-                gr.Markdown("#### 高级参数")
-
-                temperature = gr.Slider(
-                    label="temperature",
-                    minimum=0.0,
-                    maximum=2.0,
-                    value=default_temp,
-                    step=0.05,
-                )
-                top_p = gr.Slider(
-                    label="top_p",
-                    minimum=0.0,
-                    maximum=1.0,
-                    value=default_top_p,
-                    step=0.01,
-                )
-                top_k = gr.Slider(
-                    label="top_k",
-                    minimum=1,
-                    maximum=100,
-                    value=default_top_k,
-                    step=1,
-                )
-                max_output_tokens = gr.Slider(
-                    label="max_output_tokens",
-                    minimum=256,
-                    maximum=32768,
-                    value=default_max_tokens,
-                    step=256,
-                )
-
-                system_instruction = gr.Textbox(
-                    label="System Instruction（系统提示词）",
-                    lines=4,
-                    value=default_sys_inst,
-                    placeholder="在这里写对模型的总指导，比如：你是一个善于写代码和查 bug 的助手……",
-                )
-
-                gr.Markdown("#### 参数预设配置")
-
-                # 状态：所有预设
-                presets_state = gr.State(presets)
-
-                preset_name_input = gr.Textbox(
-                    label="预设名称",
-                    placeholder="例如：默认 / 翻译-保守 / 创作-大胆",
-                    value=first_key or "",
-                )
-
-                preset_dropdown = gr.Dropdown(
-                    label="已保存预设",
-                    choices=list(presets.keys()),
-                    value=first_key,
-                )
+        # 1. 创建顶级 Tabs 容器
+        with gr.Tabs():
+            
+            # === Tab 1: 主对话界面 (原来的界面) ===
+            with gr.Tab("🍌 Banana Studio"):
+                raw_messages_state = gr.State([])  # 保存原始结构 [{'role', 'text', 'images'}, ...]
+                export_session_dir = gr.State(value="")
 
                 with gr.Row():
-                    btn_save_preset = gr.Button("💾 保存当前为预设")
-                    btn_load_preset = gr.Button("📥 加载预设")
-                    btn_delete_preset = gr.Button("🗑 删除预设")
+                    # ===== 左侧：参数区 =====
+                    with gr.Column(scale=1, min_width=320):
+                        gr.Markdown("### ⚙️ 设置面板")
 
-                # --- 预设按钮绑定 ---
-                btn_save_preset.click(
-                    fn=save_preset,
-                    inputs=[
-                        preset_name_input,
-                        presets_state,
-                        model_name,
-                        aspect_ratio,
-                        image_size,
-                        temperature,
-                        top_p,
-                        top_k,
-                        max_output_tokens,
-                        system_instruction,
-                    ],
-                    outputs=[
-                        presets_state,
-                        preset_dropdown,
-                    ],
-                )
+                        api_key = gr.Textbox(
+                            label="GOOGLE_CLOUD_API_KEY（留空则使用环境变量）",
+                            value=os.environ.get("GOOGLE_CLOUD_API_KEY", ""),
+                            type="password",
+                        )
 
-                btn_load_preset.click(
-                    fn=load_preset,
-                    inputs=[
-                        preset_dropdown,
-                        presets_state,
-                    ],
-                    outputs=[
-                        model_name,
-                        aspect_ratio,
-                        image_size,
-                        temperature,
-                        top_p,
-                        top_k,
-                        max_output_tokens,
-                        system_instruction,
-                    ],
-                )
+                        model_name = gr.Dropdown(
+                            label="模型",
+                            choices=DEFAULT_MODEL_OPTIONS,
+                            value=default_model,
+                        )
+                        
+                        enable_search = gr.Checkbox(
+                            label="启用 Google Search（Grounding / 联网检索）",
+                            value=False,
+                        )
 
-                btn_delete_preset.click(
-                    fn=delete_preset,
-                    inputs=[
-                        preset_dropdown,
-                        presets_state,
-                    ],
-                    outputs=[
-                        presets_state,
-                        preset_dropdown,
-                    ],
-                )
+                        aspect_ratio = gr.Dropdown(
+                            label="图像宽高比（用于 image_config，仅当前示例中传给配置）",
+                            choices=ASPECT_RATIO_OPTIONS,
+                            value=default_aspect,
+                        )
 
-                gr.Markdown(
-                    "> 🔐 当前示例中，所有 SafetySetting 的 threshold 均为 `OFF`，"
-                    "仅建议在本地/开发环境中使用。"
-                )
+                        image_size = gr.Dropdown(
+                            label="图像尺寸（image_size，例如 1K / 512 / 2K）",
+                            choices=IMAGE_SIZE_OPTIONS,
+                            value=default_image_size,
+                        )
 
-            # ===== 右侧：对话区 =====
-            with gr.Column(scale=2):
-                gr.Markdown("### 💬 对话区")
+                        gr.Markdown("#### 高级参数")
 
-                chatbot = gr.Chatbot(
-                    label="Chat",
-                    height=520,
-                    type="messages",  
-                )
+                        temperature = gr.Slider(
+                            label="temperature",
+                            minimum=0.0,
+                            maximum=2.0,
+                            value=default_temp,
+                            step=0.05,
+                        )
+                        top_p = gr.Slider(
+                            label="top_p",
+                            minimum=0.0,
+                            maximum=1.0,
+                            value=default_top_p,
+                            step=0.01,
+                        )
+                        top_k = gr.Slider(
+                            label="top_k",
+                            minimum=1,
+                            maximum=100,
+                            value=default_top_k,
+                            step=1,
+                        )
+                        max_output_tokens = gr.Slider(
+                            label="max_output_tokens",
+                            minimum=256,
+                            maximum=32768,
+                            value=default_max_tokens,
+                            step=256,
+                        )
 
-                with gr.Row():
-                    user_input = gr.Textbox(
-                        label="输入消息",
-                        placeholder="在这里输入问题或描述…",
-                        scale=4,
-                    )
-                image_upload = gr.Files(
-                    label="上传图片（多张图将作为当前轮多模态输入）",
-                    file_types=["image"],
-                    file_count="multiple",
-                )
+                        system_instruction = gr.Textbox(
+                            label="System Instruction（系统提示词）",
+                            lines=4,
+                            value=default_sys_inst,
+                            placeholder="在这里写对模型的总指导，比如：你是一个善于写代码和查 bug 的助手……",
+                        )
 
-                with gr.Row():
-                    send_btn = gr.Button("发送", variant="primary")
-                    clear_btn = gr.Button("清空对话")
+                        gr.Markdown("#### 参数预设配置")
 
-                # 绑定发送事件
-                send_btn.click(
-                    fn=gr_chat_send,
-                    inputs=[
-                        user_input,
-                        image_upload,
-                        chatbot,
-                        raw_messages_state,
-                        api_key,
-                        model_name,
-                        aspect_ratio,
-                        image_size,
-                        temperature,
-                        top_p,
-                        top_k,
-                        max_output_tokens,
-                        system_instruction,
-                    ],
-                    outputs=[
-                        chatbot,
-                        raw_messages_state,
-                        user_input,
-                        image_upload,
-                    ],
-                )
+                        # 状态：所有预设
+                        presets_state = gr.State(presets)
 
-                clear_btn.click(
-                    fn=gr_clear,
-                    inputs=[chatbot, raw_messages_state],
-                    outputs=[chatbot, raw_messages_state],
-                )
+                        preset_name_input = gr.Textbox(
+                            label="预设名称",
+                            placeholder="例如：默认 / 翻译-保守 / 创作-大胆",
+                            value=first_key or "",
+                        )
+
+                        preset_dropdown = gr.Dropdown(
+                            label="已保存预设",
+                            choices=list(presets.keys()),
+                            value=first_key,
+                        )
+
+                        with gr.Row():
+                            btn_save_preset = gr.Button("💾 保存当前为预设")
+                            btn_load_preset = gr.Button("📥 加载预设")
+                            btn_delete_preset = gr.Button("🗑 删除预设")
+
+                        # --- 预设按钮绑定 ---
+                        btn_save_preset.click(
+                            fn=save_preset,
+                            inputs=[
+                                preset_name_input,
+                                presets_state,
+                                model_name,
+                                aspect_ratio,
+                                image_size,
+                                temperature,
+                                top_p,
+                                top_k,
+                                max_output_tokens,
+                                system_instruction,
+                            ],
+                            outputs=[
+                                presets_state,
+                                preset_dropdown,
+                            ],
+                        )
+
+                        btn_load_preset.click(
+                            fn=load_preset,
+                            inputs=[
+                                preset_dropdown,
+                                presets_state,
+                            ],
+                            outputs=[
+                                model_name,
+                                aspect_ratio,
+                                image_size,
+                                temperature,
+                                top_p,
+                                top_k,
+                                max_output_tokens,
+                                system_instruction,
+                            ],
+                        )
+
+                        btn_delete_preset.click(
+                            fn=delete_preset,
+                            inputs=[
+                                preset_dropdown,
+                                presets_state,
+                            ],
+                            outputs=[
+                                presets_state,
+                                preset_dropdown,
+                            ],
+                        )
+
+                        gr.Markdown(
+                            "> 🔐 当前示例中，所有 SafetySetting 的 threshold 均为 `OFF`，"
+                            "仅建议在本地/开发环境中使用。"
+                        )
+
+                    # ===== 右侧：对话区 =====
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 💬 对话区")
+
+                        chatbot = gr.Chatbot(
+                            label="Chat",
+                            height=520,
+                            type="messages",  
+                        )
+
+                        with gr.Row():
+                            user_input = gr.Textbox(
+                                label="输入消息",
+                                placeholder="在这里输入问题或描述…",
+                                scale=4,
+                            )
+                        image_upload = gr.Files(
+                            label="上传图片（多张图将作为当前轮多模态输入）",
+                            file_types=["image"],
+                            file_count="multiple",
+                        )
+
+                        with gr.Row():
+                            send_btn = gr.Button("发送", variant="primary")
+                            clear_btn = gr.Button("清空对话")
+
+                        # 绑定发送事件
+                        send_btn.click(
+                            fn=gr_chat_send,
+                            inputs=[
+                                user_input,
+                                image_upload,
+                                chatbot,
+                                raw_messages_state,
+                                api_key,
+                                model_name,
+                                aspect_ratio,
+                                image_size,
+                                temperature,
+                                top_p,
+                                top_k,
+                                max_output_tokens,
+                                system_instruction,
+                                enable_search,
+                                export_session_dir,
+                            ],
+                            outputs=[
+                                chatbot,
+                                raw_messages_state,
+                                user_input,
+                                image_upload,
+                                export_session_dir,
+                            ],
+                        )
+
+                        clear_btn.click(
+                            fn=gr_clear,
+                            inputs=[chatbot, raw_messages_state],
+                            outputs=[chatbot, raw_messages_state],
+                        )
+            
+            # === Tab 2+: 动态加载插件 ===
+            # 直接在这里调用加载函数，它会在当前的 gr.Tabs() 上下文中自动渲染 Tab
+            load_plugins_from_dir("plugins")
 
         return demo
 
@@ -847,12 +1170,16 @@ if __name__ == "__main__":
 
     # ② 创建 UI
     demo = create_gradio_app()
+    
+    # 查找端口
+    port = find_free_port(7860, 7880, host="127.0.0.1")
 
     # ③ 启动 (🛠️ 修复点：添加 allowed_paths)
     # 允许 Gradio 读取当前目录下的 outputs 文件夹和根目录文件
     demo.launch(
         server_name="127.0.0.1", 
-        server_port=7860,
+        server_port=port,
         allowed_paths=[".", "outputs"] 
     )
+    print(f"[banana] Gradio running on http://127.0.0.1:{port}")
 
