@@ -64,3 +64,5 @@
 ### **7.新增插件标签页功能：**
 * 一个简单的加载器，它会自动扫描 plugins 文件夹下的所有 .py 文件，并调用里面的 create_tab 函数。可以以此自行开发插件功能。
 * 新增了一个矩阵图转换gif的工具。
+<img width="1062" height="219" alt="image" src="https://github.com/user-attachments/assets/e8998b7a-91e2-4a65-b9c1-6a70b7e2f22f" />
+
