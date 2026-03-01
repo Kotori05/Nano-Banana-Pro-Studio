@@ -293,7 +293,8 @@ def load_google_api_key_from_file() -> None:
 DEFAULT_MODEL_OPTIONS = [
     "gemini-2.5-flash",          # 文本/多模态输入，文本输出（官方 quickstart 推荐）
     "gemini-3-pro-preview",      # 3 Pro 语言模型（多模态输入，文本输出）
-    "gemini-3-pro-image-preview",# 3 Pro 图像生成
+    "gemini-3-pro-image-preview",# Nano Banana Pro 图像生成
+    "gemini-3.1-flash-image-preview",# Nano Banana 2 图像生成
     "gemini-2.5-flash-image",    # 2.5 图像生成
 ]
 
@@ -722,7 +723,7 @@ def call_gemini_vertex(
 
     # 3) 构造 Config (保持不变)
     # 记得你之前用的字典绕过校验的方法，或者确保 build_generate_config 是最新的
-    image_models = {"gemini-2.5-flash-image", "gemini-3-pro-image-preview"}
+    image_models = {"gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"}
     want_image = model_name in image_models
     want_thinking = model_name == "gemini-3-pro-preview"
 
@@ -1182,4 +1183,5 @@ if __name__ == "__main__":
         allowed_paths=[".", "outputs"] 
     )
     print(f"[banana] Gradio running on http://127.0.0.1:{port}")
+
 
