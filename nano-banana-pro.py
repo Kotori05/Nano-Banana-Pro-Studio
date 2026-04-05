@@ -292,12 +292,12 @@ def load_google_api_key_from_file() -> None:
 
 DEFAULT_MODEL_OPTIONS = [
     "gemini-2.5-flash",          # 文本/多模态输入，文本输出（官方 quickstart 推荐）
-    "gemini-3-pro-preview",      # 3 Pro 语言模型（多模态输入，文本输出）
+    "gemini-3.1-pro-preview",      # 3.1 Pro 语言模型（多模态输入，文本输出）
+    "gemini-3-flash-preview",    # 3.0 Flash 语言模型（多模态输入，文本输出）
     "gemini-3-pro-image-preview",# Nano Banana Pro 图像生成
     "gemini-3.1-flash-image-preview",# Nano Banana 2 图像生成
     "gemini-2.5-flash-image",    # 2.5 图像生成
 ]
-
 
 # 与 Vertex 示例类似的宽高比 & 尺寸
 ASPECT_RATIO_OPTIONS = [
@@ -312,6 +312,7 @@ ASPECT_RATIO_OPTIONS = [
     "16:9 风景5504x3072",
     "21:9 超宽屏6336x2688"
     ]
+
 # 电影级宽屏 
 # """
 # 1:1       1024x1024	1210	2048x2048	1210	4096x4096	2000
@@ -721,11 +722,10 @@ def call_gemini_vertex(
         except: continue
     if current_parts: contents.append(types.Content(role="user", parts=current_parts))
 
-    # 3) 构造 Config (保持不变)
-    # 记得你之前用的字典绕过校验的方法，或者确保 build_generate_config 是最新的
+    # 3) 构造 Config 
     image_models = {"gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"}
     want_image = model_name in image_models
-    want_thinking = model_name == "gemini-3-pro-preview"
+    want_thinking = ( "gemini-3.1-pro-preview" or "gemini-3-flash-preview" ) in model_name or "thinking" in model_name.lower() # 稍微放宽判断
 
     generate_config = build_generate_config(
         temperature=temperature, top_p=top_p, top_k=top_k, max_output_tokens=max_output_tokens,
