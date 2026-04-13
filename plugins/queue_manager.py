@@ -6,13 +6,13 @@ import traceback
 from datetime import datetime
 
 # 尝试从主程序导入核心调用函数和配置
-# 注意：为了避免循环导入，建议在函数内部导入，或者确保 nano-banana--pro.py 结构允许
+# 注意：为了避免循环导入，建议在函数内部导入，或者确保 nano_banana_pro.py 结构允许
 try:
-    from nano-banana-pro import call_gemini_vertex, DEFAULT_MODEL_OPTIONS
+    from nano_banana_pro import call_gemini_vertex, DEFAULT_MODEL_OPTIONS
 except ImportError:
     # 如果独立运行或导入失败的 fallback
     DEFAULT_MODEL_OPTIONS = ["gemini-3-pro-image-preview"]
-    print("[QueueManager] ⚠️ 无法导入 nano-banana-pro.py，请确保文件在同一目录下")
+    print("[QueueManager] ⚠️ 无法导入 nano_banana_pro.py，请确保文件在同一目录下")
 
 # ================= 工具函数：参数解析 =================
 
@@ -86,7 +86,7 @@ def execute_queue_task(
     """
     生成器函数：逐步执行队列任务并 yield 状态
     """
-    from nano-banana--pro import call_gemini_vertex # 延迟导入
+    from nano_banana_pro import call_gemini_vertex # 延迟导入
     
     results = []
     logs = []
