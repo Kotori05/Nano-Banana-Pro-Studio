@@ -1,131 +1,113 @@
-# 🍌 Nano Banana Pro Studio
-A local Gradio application with full support for all available parameters of `gemini-3-pro-image-preview`
+# Nano Banana Pro Studio
 
-## Gemini 3 Pro Image Generator
-
-A lightweight graphical interface built with **Gradio** and the **Google GenAI SDK**, designed specifically for testing and using Google Vertex AI’s latest **Gemini 3 Pro Image** (Nano Banana) model.
+A local Gemini image-generation workspace built with **Gradio** and the **Google GenAI SDK**. It focuses on `gemini-3-pro-image-preview`, multi-image references, PNG parameter metadata, Markdown generation logs, and a built-in smart queue.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Gradio](https://img.shields.io/badge/Gradio-5.23.2-orange)
 ![Vertex AI](https://img.shields.io/badge/Google-Vertex%20AI-4285F4)
 
----
+## Key Features
 
-## ✨ Key Features
-
-- **⚡ Latest model support**  
-  Full support for all currently available parameters of `gemini-3-pro-image-preview`, including safety-related parameters  
-  (although in practice, they don’t seem to be very effective).
-
-- **🎨 Rich parameter controls**  
-  Supports multiple aspect ratios such as **1:1**, **16:9**, and **21:9**, as well as **2K / 4K** resolution options.
-
-- **🔐 Dual authentication modes**
-  - **Enterprise-grade**: Google Cloud **Service Account JSON** (standard Vertex AI mode)
-  - **Personal use**: **API Key** (AI Studio / Vertex Express mode)
-
-- **📝 Configuration presets**  
-  Built-in preset templates with support for saving and reusing your own commonly used parameter sets.
-
-- **🖼️ Multimodal interaction**  
-  Supports **image-to-image** generation and **multi-image fusion prompts**.
+- **Gemini image model support**: Supports `gemini-3-pro-image-preview`, `gemini-2.5-flash-image`, and related image models.
+- **Full parameter controls**: Model, aspect ratio, image size, Google Search, temperature, top_p, top_k, max_output_tokens, System Instruction, and more.
+- **Multi-image reference input**: The main page and smart queue both support repeated drag-and-drop image appending, plus a dedicated clear-images button.
+- **Presets and last-parameter recall**: Save reusable presets and reload the latest successful generation parameters, including readable reference image paths when available.
+- **PNG parameter write/read**: Generated PNG files can include a Stable Diffusion WebUI-style `parameters` text chunk. The PNG parameter page can parse it and send the values to either the main page or the smart queue.
+- **Built-in smart queue**: Add multiple task groups, view the queue, move pending groups up/down, delete/cancel groups, skip one item, skip a whole group, abort, and resume.
+- **Markdown export**: Chat and queue generation logs are exported to `exports/`. Queue logs record one prompt per group and per-result parameter differences.
+- **Dual authentication modes**: Supports Google Cloud Service Account JSON and API Key authentication.
 
 <img width="2271" height="1996" alt="UI Screenshot" src="https://github.com/user-attachments/assets/de815daf-3536-44f7-aca5-defd8c2db626" />
 
----
-
-## 📦 Installation Guide
+## Installation
 
 ### 1. Clone the repository
 
-    git clone https://github.com/Kotori05/Nano-Banana-Pro-Studio.git
-    cd Nano-Banana-Pro-Studio
+```bash
+git clone https://github.com/Kotori05/Nano-Banana-Pro-Studio.git
+cd Nano-Banana-Pro-Studio
+```
 
-### 2. Create a Python environment (recommended)
+### 2. Create a Python environment
 
-    conda create -n banana python=3.10
-    conda activate banana
+```bash
+conda create -n banana python=3.10
+conda activate banana
+```
 
 ### 3. Install dependencies
 
-Option A (recommended, pinned versions):
+```bash
+pip install -r requirements.txt
+```
 
-    pip install -r requirements.txt
+Manual install:
 
-Option B (manual install):
+```bash
+pip install gradio==5.23.2 google-genai==1.53.0 gradio-client protobuf google-api-core google-auth google-cloud-core googleapis-common-protos websockets Pillow requests numpy aiohttp
+```
 
-    pip install gradio==5.23.2 google-genai==1.53 gradio-client protobuf \
-    google-api-core google-auth google-cloud-core \
-    googleapis-common-protos websockets Pillow requests numpy aiohttp
+## Authentication
 
----
+Choose one method.
 
-## 🔑 Authentication Setup
+### Method A: Google Cloud Service Account
 
-This project supports **two authentication methods**. Choose the one that fits your account type.
+1. Create a Service Account in Google Cloud Console and download the JSON key.
+2. Make sure the Vertex AI API is enabled for the project.
+3. Rename the JSON file to `GOOGLE_CLOUD_API_KEY.json` and place it in the project root.
 
-### Method A: Google Cloud Service Account (Recommended, stable)
+### Method B: API Key
 
-- Create a **Service Account** in Google Cloud Console
-- Enable the **Vertex AI API** for the project
-- Download the Service Account JSON key
-- Rename it to:
+1. Get an API Key from Google AI Studio or Vertex AI.
+2. Create `GOOGLE_CLOUD_API_KEY.txt` in the project root.
+3. Paste the API Key as plain text, without quotes.
 
-    GOOGLE_CLOUD_API_KEY.json
+You can also paste an API Key into the UI field temporarily or provide it through the `GOOGLE_CLOUD_API_KEY` environment variable.
 
-- Place it in the project root directory
+## Run
 
----
+The only recommended launch command is:
 
-### Method B: API Key (AI Studio / Vertex Express)
+```bash
+python launch.py
+```
 
-- Obtain an API Key from **Google AI Studio** or **Vertex AI**
-- Create a file named:
+The app automatically changes the working directory to the folder containing `launch.py` and creates `outputs/`, `exports/`, and `plugins/` when needed. The old `nano_banana_pro.py` file is no longer maintained as a compatibility launcher.
 
-    GOOGLE_CLOUD_API_KEY.txt
+## Usage Notes
 
-- Paste your API Key into the file (plain text, **no quotes**)
-- Place the file in the project root directory
+- Main-page defaults are `16:9`, `4K`, and temperature `0.9`.
+- `gemini-3-pro-image-preview` may not support System Instruction. Put those instructions directly in the Prompt when using that model. Other models can still use the System Instruction field.
+- PNG parameter saving is enabled by default. If “save generation parameters to PNG” is disabled, images are still saved, but the PNG parameter page will report no embedded parameters.
+- PNG metadata, last parameters, and Markdown logs do not intentionally store API keys or credential paths.
+- In the smart queue, “Add task group” only adds work to the queue. “Continue / start queue” starts or resumes execution.
+- The smart queue is serial by default. Set concurrency before starting the queue if you want parallel execution.
 
----
+## Smart Queue
 
-## 🚀 Run the Application
+The smart queue is now built in. It no longer depends on the optional plugin loader.
 
-    cd /your/project/location
-    python ./nano-banana-pro.py
+- Add multiple task groups continuously.
+- The UI displays task groups as `1, 2, 3...`; internal IDs use timestamps.
+- Pending task groups can be moved up, moved down, or deleted.
+- Running groups can skip one item, skip the rest of the group, or abort.
+- Network errors, timeouts, 429 errors, and temporary SSL errors retry or end in a clear terminal state instead of staying permanently running.
+- Queue-generated PNG files use the same parameter metadata format and can be read back by the PNG parameter page.
 
-On first run:
-- The `outputs/` folder will be created automatically
-- A configuration preset file `config.json` will also be generated
+## Optional Plugins
 
----
+The `plugins/` folder can still load extra plugins. A plugin file should expose a `create_tab()` function. The built-in smart queue does not depend on this mechanism.
 
-## 💡 Tips
+Example plugin: matrix image to GIF.
 
-- `gemini-3-pro-image-preview` **does not currently support system prompts**
-  - Put system-level instructions directly into the **user prompt**
-- Other Gemini models **do** support system prompts via the UI field
-
----
-
-## 🧩 Plugin Tab System
-
-- Includes a simple **plugin loader**
-- Automatically scans all `.py` files under the `plugins/` directory
-- Each plugin must expose a `create_tab()` function
-- You can use this system to develop your own extensions
-
-### Included plugins
-
-#### Matrix-to-GIF conversion tool
 <img width="1062" height="219" alt="Matrix to GIF Plugin" src="https://github.com/user-attachments/assets/e8998b7a-91e2-4a65-b9c1-6a70b7e2f22f" />
 
-#### Request queue management tool
-<img width="1650" height="2005" alt="Request Queue Plugin" src="https://github.com/user-attachments/assets/a07398fb-4fc5-464e-a43e-8722c720ed05" />
+## Security
 
----
+- Never commit `GOOGLE_CLOUD_API_KEY.json`, `GOOGLE_CLOUD_API_KEY.txt`, API keys, or other credential files.
+- PNG parameters, last parameters, and Markdown logs do not intentionally write API keys.
 
-## 🤝 Contributing
+## Contributing
 
-- Feature contributions and improvements are welcome
-- ⚠️ **NEVER upload API keys or credential files to the repository**
+Feature improvements, bug fixes, and documentation updates are welcome.

@@ -1,75 +1,118 @@
-# 🍌 Nano Banana Pro Studio
+# Nano Banana Pro Studio
+
 <p align="left">
   <a href="README.zh-CN.md">中文</a> |
   <a href="README.en-US.md">English</a>
 </p>
 
-支持 `gemini-3-pro-image-preview`全部可用参数的本地gradio应用
-# Gemini 3 Pro Image Generator
-
-一个基于 **Gradio** 和 **Google GenAI SDK** 构建的轻量级图形界面，专为测试和使用 Google Vertex AI 最新的 **Gemini 3 Pro Image** (Nano Banana) 模型而设计。
+一个基于 **Gradio** 和 **Google GenAI SDK** 的本地 Gemini 图像生成工作台，重点支持 `gemini-3-pro-image-preview`、多图参考、PNG 参数读写、Markdown 记录导出和内置智能队列。
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Gradio](https://img.shields.io/badge/Gradio-5.23.2-orange)
 ![Vertex AI](https://img.shields.io/badge/Google-Vertex%20AI-4285F4)
 
-## ✨ 主要特性
+## 主要功能
 
-* **⚡️ 最新模型支持**：完美支持 `gemini-3-pro-image-preview` 的所有可用参数，包括安全参数（但是看起来好像没什么用）。
-* **🎨 丰富的参数控制**：支持 1:1, 16:9, 21:9 等多种宽高比，以及 4K/2K 分辨率选择。
-* **🔐 双重认证模式**：
-    * **企业级**：支持 Service Account JSON (Vertex AI 标准模式)。
-    * **个人级**：支持 API Key (AI Studio / Vertex Express 模式)。
-* **📝 配置模板**：内置快捷模板，支持自定义保存常用参数预设。
-* **🖼️ 多模态交互**：支持“图生图”和多图融合指令。
-  
-<img width="2271" height="1996" alt="image" src="https://github.com/user-attachments/assets/de815daf-3536-44f7-aca5-defd8c2db626" />
+- **Gemini 图像模型支持**：支持 `gemini-3-pro-image-preview`、`gemini-2.5-flash-image` 等图像模型。
+- **完整参数控制**：支持模型、宽高比、图片尺寸、Google Search、temperature、top_p、top_k、max_output_tokens、System Instruction 等参数。
+- **多图参考输入**：主页面和智能队列均支持多次拖拽追加参考图，并可单独清空待发送图片。
+- **参数预设与上次参数回读**：可保存常用参数预设，也可读取最近一次成功生成使用的参数和可读取到的参考图路径。
+- **PNG 参数写入与读取**：保存 PNG 时可写入 Stable Diffusion WebUI 风格的 `parameters` 文本块；PNG 参数读取页可解析参数并发送到主页面或智能队列。
+- **内置智能队列**：支持连续加入多个任务组、查看队列、上移/下移、删除/取消、跳过单项、跳过组、中止和继续执行。
+- **Markdown 记录导出**：对话和队列生成记录会导出到 `exports/`，队列任务按组记录提示词和每张结果的差异参数。
+- **双认证模式**：支持 Google Cloud Service Account JSON，也支持 API Key。
 
-## 📦 安装指南
-### **1. 克隆仓库**
-### **2. 创建环境 (推荐)**
-* conda create -n banana python=3.10
-* conda activate banana
-### **3. 安装依赖**
-* pip install -r requirements.txt
-* pip install gradio==5.23.2 google-genai==1.53 gradio-client protobuf google-api-core google-auth google-cloud-core googleapis-common-protos websockets Pillow requests numpy aiohttp
+<img width="2271" height="1996" alt="UI Screenshot" src="https://github.com/user-attachments/assets/de815daf-3536-44f7-aca5-defd8c2db626" />
 
+## 安装
 
-### **4.🔑 配置认证**
-本项目支持两种认证方式，请根据你的账号类型选择一种：
+### 1. 克隆仓库
 
-#### **方式 A：**
-* 使用 Google Cloud Service Account (推荐，稳定)
-* 在 Google Cloud Console 中创建一个 Service Account 并下载 JSON 密钥。
+```bash
+git clone https://github.com/Kotori05/Nano-Banana-Pro-Studio.git
+cd Nano-Banana-Pro-Studio
+```
 
-* 确保该项目已启用 Vertex AI API。
+### 2. 创建 Python 环境
 
-* 将 JSON 文件重命名为 GOOGLE_CLOUD_API_KEY.json 并放入项目根目录。
+```bash
+conda create -n banana python=3.10
+conda activate banana
+```
 
-#### **方式 B：**
-* 使用 API Key
-* 在 Google AI Studio 或 Vertex AI 获取 API Key。
+### 3. 安装依赖
 
-* 创建一个名为 GOOGLE_CLOUD_API_KEY.txt 的文件放入项目根目录。
+```bash
+pip install -r requirements.txt
+```
 
-* 将 API Key 粘贴到文件中（纯文本，不要包含引号）。
+如需手动安装：
 
-### **5.🚀 运行**
-* cd /location
-* python ./nano-banana-pro.py
-* 会自动生成output文件夹和配置文件存档config.json
+```bash
+pip install gradio==5.23.2 google-genai==1.53.0 gradio-client protobuf google-api-core google-auth google-cloud-core googleapis-common-protos websockets Pillow requests numpy aiohttp
+```
 
-### **6.TIPS：**
-* gemini-3-pro-image-preview 目前不支持系统提示词，请把系统提示写到对话中，其他模型可以用系统提示词输入框。
+## 配置认证
 
-### **7.新增插件标签页功能：**
-* 一个简单的加载器，它会自动扫描 plugins 文件夹下的所有 .py 文件，并调用里面的 create_tab 函数。可以以此自行开发插件功能。
-* 新增了一个矩阵图转换gif的插件工具。
-<img width="1062" height="219" alt="image" src="https://github.com/user-attachments/assets/e8998b7a-91e2-4a65-b9c1-6a70b7e2f22f" />
+任选一种方式。
 
-* 新增了一个请求队列的插件工具。
-<img width="1650" height="2005" alt="image" src="https://github.com/user-attachments/assets/a07398fb-4fc5-464e-a43e-8722c720ed05" />
+### 方式 A：Google Cloud Service Account
 
-#### 🤝 贡献
-* 欢迎提交功能更新
-* ⚠️ 绝对不要上传密钥文件！！！
+1. 在 Google Cloud Console 创建 Service Account，并下载 JSON 密钥。
+2. 确认项目已启用 Vertex AI API。
+3. 将 JSON 文件重命名为 `GOOGLE_CLOUD_API_KEY.json`，放到项目根目录。
+
+### 方式 B：API Key
+
+1. 在 Google AI Studio 或 Vertex AI 获取 API Key。
+2. 在项目根目录创建 `GOOGLE_CLOUD_API_KEY.txt`。
+3. 将 API Key 以纯文本写入文件，不要包含引号。
+
+也可以在页面中的 API Key 输入框临时填写，或通过环境变量 `GOOGLE_CLOUD_API_KEY` 提供。
+
+## 启动
+
+当前唯一推荐启动入口是：
+
+```bash
+python launch.py
+```
+
+程序会自动切换到 `launch.py` 所在目录，并创建 `outputs/`、`exports/`、`plugins/` 等目录。旧的 `nano_banana_pro.py` 不再作为兼容启动入口维护。
+
+## 使用说明
+
+- 主页面默认参数为 `16:9`、`4K`、temperature `0.9`。
+- `gemini-3-pro-image-preview` 目前可能不支持 System Instruction；这类内容建议直接写入 Prompt。其他模型可继续使用 System Instruction 输入框。
+- PNG 参数默认开启保存；关闭“保存生成参数到 PNG”后仍会保存图片，但 PNG 参数读取页会提示无参数。
+- PNG 参数读取页不会写入或展示 API key、凭证路径等敏感信息。
+- 智能队列中，“加入任务组”只负责入队；“继续 / 启动队列”负责开始或恢复执行。
+- 智能队列默认串行执行，并发数可在启动队列前设置。
+
+## 智能队列
+
+智能队列已经内置，不再作为松散插件依赖主文件导入。
+
+- 支持连续提交多个任务组。
+- 队列列表以 `1、2、3...` 显示任务组，内部使用时间戳 ID。
+- pending 任务组可上移、下移、删除。
+- running 任务组可跳过单项、跳过组、中止。
+- 网络异常、超时、429、SSL 临时错误会进入重试或明确失败状态，不会长期停留在 running。
+- 队列生成图片同样支持 PNG 参数写入，也可被 PNG 参数读取页回填。
+
+## 可选插件
+
+`plugins/` 目录仍可用于加载额外插件。插件文件需要提供 `create_tab()` 函数。内置智能队列不再依赖该机制。
+
+示例插件：矩阵图转 GIF。
+
+<img width="1062" height="219" alt="Matrix to GIF Plugin" src="https://github.com/user-attachments/assets/e8998b7a-91e2-4a65-b9c1-6a70b7e2f22f" />
+
+## 安全提醒
+
+- 不要提交 `GOOGLE_CLOUD_API_KEY.json`、`GOOGLE_CLOUD_API_KEY.txt`、API key 或其他凭证文件。
+- PNG 参数、上次参数和 Markdown 记录不会主动写入 API key。
+
+## 贡献
+
+欢迎提交功能改进、Bug 修复和文档更新。
