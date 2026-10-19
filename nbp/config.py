@@ -16,6 +16,7 @@ DEFAULT_MODEL_OPTIONS = [
     "gemini-3-flash-preview",
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
+    "gemini-nano-banana-2.1",
     "gemini-2.5-flash-image",
 ]
 
