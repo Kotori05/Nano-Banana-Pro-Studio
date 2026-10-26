@@ -11,11 +11,13 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from .config import GEMINI_IMAGE_MODELS, NANO_BANANA_2_LITE_MODEL
 from .params import GenerationParams, save_last_params, ui_aspect_to_vertex
+from .openai_images import call_openai_images, is_openai_image_model
 from .png_metadata import save_png_with_parameters
 
 
-IMAGE_MODELS = {"gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview","gemini-nano-banana-2.1"}
+IMAGE_MODELS = frozenset(GEMINI_IMAGE_MODELS)
 
 
 class GenerationService:
@@ -51,6 +53,7 @@ class GenerationService:
         params: GenerationParams,
         history_messages: list[dict[str, Any]] | None = None,
         user_images: list[str] | None = None,
+        openai_api_key: str = "",
     ) -> tuple[str, list[str]]:
         semaphore = self._semaphore
         with self._lock:
@@ -60,6 +63,8 @@ class GenerationService:
             self._waiting -= 1
             self._active += 1
         try:
+            if is_openai_image_model(params.model_name):
+                return call_openai_images(openai_api_key, params, history_messages or [], user_images or [])
             return call_gemini_vertex(api_key, params, history_messages or [], user_images or [])
         finally:
             semaphore.release()
@@ -83,6 +88,7 @@ def create_client(explicit_key: str | None = None, project: str | None = None, l
 
 
 def build_generate_config(params: GenerationParams, want_image: bool, want_thinking: bool) -> types.GenerateContentConfig:
+    params = GenerationParams.from_dict(params.public_dict())
     safety_settings = [
         types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
         types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
@@ -98,11 +104,13 @@ def build_generate_config(params: GenerationParams, want_image: bool, want_think
     }
     if params.enable_search:
         cfg_kwargs["tools"] = [{"google_search": {}}]
+    if params.system_instruction.strip() and not want_image:
+        cfg_kwargs["system_instruction"] = params.system_instruction.strip()
     if want_image:
         try:
             image_config = types.ImageConfig(
                 aspect_ratio=ui_aspect_to_vertex(params.aspect_ratio),
-                image_size=params.image_size,
+                image_size="1024px" if params.model_name == NANO_BANANA_2_LITE_MODEL else params.image_size,
             )
         except Exception as exc:
             print(f"[WARN] ImageConfig rejected image_size; using aspect ratio only: {exc}")
@@ -180,15 +188,17 @@ def call_gemini_vertex(
 ) -> tuple[str, list[str]]:
     params = GenerationParams.from_dict(params.public_dict())
     client = create_client(api_key, location="global")
+    want_image = params.model_name in IMAGE_MODELS
     contents: list[types.Content] = []
-    if params.system_instruction.strip():
-        contents.append(types.Content(role="system", parts=[types.Part.from_text(text=params.system_instruction.strip())]))
     for message in history_messages or []:
         content = _content_from_message(message)
         if content:
             contents.append(content)
 
     current_parts = []
+    # Image models accept instructions in the user prompt; contents roles are user/model.
+    if want_image and params.system_instruction.strip():
+        current_parts.append(types.Part.from_text(text=params.system_instruction.strip()))
     if params.prompt:
         current_parts.append(types.Part.from_text(text=params.prompt))
     for image in user_images or []:
@@ -199,7 +209,6 @@ def call_gemini_vertex(
     if current_parts:
         contents.append(types.Content(role="user", parts=current_parts))
 
-    want_image = params.model_name in IMAGE_MODELS
     want_thinking = "thinking" in params.model_name.lower() or "3.1-pro" in params.model_name or "3-flash" in params.model_name
     generate_config = build_generate_config(params, want_image=want_image, want_thinking=want_thinking)
     _debug_print_send(params.model_name, params, user_images, generate_config)

@@ -13,12 +13,15 @@ from .config import (
     DEFAULT_ADVANCED_CONFIG,
     DEFAULT_MODEL_OPTIONS,
     IMAGE_SIZE_OPTIONS,
+    MODEL_CHOICES,
+    NANO_BANANA_2_LITE_MODEL,
     load_presets_from_config,
     save_presets_to_config,
 )
 from .export import log_turn_to_md
 from .generation import GenerationService
-from .params import GenerationParams, format_params_preview, load_last_params
+from .openai_images import OPENAI_ASPECT_RATIOS, is_openai_image_model, openai_image_size
+from .params import GenerationParams, aspect_key, format_params_preview, load_last_params
 from .png_metadata import read_png_parameters
 from .queue_service import QueueService
 
@@ -195,6 +198,7 @@ def gr_chat_send(
     save_png_parameters: bool,
     session_dir: str,
     generation_service: GenerationService,
+    openai_api_key: str = "",
 ):
     image_files = normalize_file_list(image_files)
     params = make_params(
@@ -227,6 +231,7 @@ def gr_chat_send(
             params=params,
             history_messages=raw_messages[:-1],
             user_images=image_files,
+            openai_api_key=openai_api_key,
         )
     except Exception as exc:
         import traceback
@@ -247,7 +252,7 @@ def gr_chat_send(
         assistant_image_paths=generated_images,
         params=params,
     )
-    raw_messages.append({"role": "model", "text": reply_text, "images": []})
+    raw_messages.append({"role": "model", "text": reply_text, "images": generated_images.copy() if is_openai_image_model(params.model_name) else []})
     return history, raw_messages, "", gr.update(value=[]), [], format_selected_images([]), session_dir
 
 
@@ -331,6 +336,7 @@ def queue_submit(
     sys_inst,
     save_png_parameters,
     queue_service: QueueService,
+    openai_api_key: str = "",
 ):
     def first_text(value, default):
         if value is None or str(value).strip() == "":
@@ -378,6 +384,7 @@ def queue_submit(
             "max_output_tokens": token_arr,
         },
         api_key=api_key or "",
+        openai_api_key=openai_api_key,
     )
     choices = queue_service.group_choices()
     return queue_refresh(queue_service, choices[-1] if choices else None)
@@ -445,6 +452,51 @@ def load_optional_plugins(plugin_dir: str = "plugins") -> None:
             print(f"[WARN] Failed to load optional plugin {file_path.name}: {exc}")
 
 
+def model_controls_for_ui(model_name: str, aspect_ratio: str, image_size: str):
+    openai = is_openai_image_model(model_name)
+    choices = ASPECT_RATIO_OPTIONS
+    if openai:
+        supported = [option for option in choices if aspect_key(option) in OPENAI_ASPECT_RATIOS]
+        if aspect_key(aspect_ratio) not in OPENAI_ASPECT_RATIOS:
+            aspect_ratio = supported[0]
+        # Existing Gemini pixel labels do not describe the OpenAI output sizes.
+        choices = [(" ".join(option.split()[:-1]), option) for option in supported]
+        size = openai_image_size(aspect_ratio, image_size)
+        note = f"GPT Image：请求尺寸 **{size}**，质量由模型自动选择。System Instruction 合并到提示词；采样参数和 Google Search 不适用。"
+        if image_size == "4K":
+            note += " 4K 按最大边 3840 和总像素上限换算，超出 2560×1440 的尺寸为实验支持。"
+    elif model_name == NANO_BANANA_2_LITE_MODEL:
+        note = "Nano Banana 2 Lite：仅支持 1K，最多 4096 输出 tokens，不支持 Google Search；主页面和队列会自动使用这些限制。"
+    else:
+        note = "Gemini 使用 Google 认证及下方的生成参数。"
+    search_update = gr.update(interactive=not openai and model_name != NANO_BANANA_2_LITE_MODEL)
+    token_update = gr.update(interactive=not openai, maximum=32768)
+    if model_name == NANO_BANANA_2_LITE_MODEL:
+        search_update.update(value=False)
+        token_update.update(value=4096, maximum=4096)
+    return (
+        gr.update(choices=choices, value=aspect_ratio), search_update,
+        *(gr.update(interactive=not openai) for _ in range(3)), token_update, note,
+    )
+
+
+def model_image_size_for_ui(model_name: str, image_size: str):
+    if model_name == NANO_BANANA_2_LITE_MODEL:
+        return gr.update(choices=["1K"], value="1K")
+    return gr.update(choices=IMAGE_SIZE_OPTIONS, value=image_size)
+
+
+def queue_model_controls_for_ui(model_name: str):
+    if model_name == NANO_BANANA_2_LITE_MODEL:
+        return (
+            gr.update(value="1K", interactive=False),
+            gr.update(value="0", interactive=False),
+            gr.update(value="4096", interactive=False),
+        )
+    openai = is_openai_image_model(model_name)
+    return gr.update(interactive=True), gr.update(interactive=not openai), gr.update(interactive=not openai)
+
+
 def create_gradio_app() -> gr.Blocks:
     presets = load_presets_from_config()
     first_key = next(iter(presets.keys()), None)
@@ -454,6 +506,12 @@ def create_gradio_app() -> gr.Blocks:
 
     with gr.Blocks(title="Banana Studio") as demo:
         gr.Markdown("# Banana Studio")
+        openai_api_key = gr.Textbox(
+            label="OpenAI API Key（主页面 / 智能队列共用）",
+            type="password",
+            placeholder="sk-...；留空使用 OPENAI_API_KEY 环境变量或 OPENAI_API_KEY.txt",
+            info="仅用于 GPT Image 模型；页面填写的密钥不保存到预设、PNG 或生成记录。",
+        )
         with gr.Tabs():
             with gr.Tab("主页面"):
                 raw_messages_state = gr.State([])
@@ -467,11 +525,12 @@ def create_gradio_app() -> gr.Blocks:
                             value=os.environ.get("GOOGLE_CLOUD_API_KEY", ""),
                             type="password",
                         )
-                        model_name = gr.Dropdown(label="模型", choices=DEFAULT_MODEL_OPTIONS, value=initial.model_name)
+                        model_name = gr.Dropdown(label="模型", choices=MODEL_CHOICES, value=initial.model_name)
                         enable_search = gr.Checkbox(label="启用 Google Search", value=initial.enable_search)
                         save_png_parameters = gr.Checkbox(label="保存生成参数到 PNG", value=True)
                         aspect_ratio = gr.Dropdown(label="图片宽高比", choices=ASPECT_RATIO_OPTIONS, value=initial.aspect_ratio)
                         image_size = gr.Dropdown(label="图片尺寸", choices=IMAGE_SIZE_OPTIONS, value=initial.image_size)
+                        model_info = gr.Markdown()
                         temperature = gr.Slider(label="temperature", minimum=0.0, maximum=2.0, value=initial.temperature, step=0.05)
                         top_p = gr.Slider(label="top_p", minimum=0.0, maximum=1.0, value=initial.top_p, step=0.01)
                         top_k = gr.Slider(label="top_k", minimum=1, maximum=100, value=initial.top_k, step=1)
@@ -526,8 +585,9 @@ def create_gradio_app() -> gr.Blocks:
                 image_upload.change(fn=merge_uploaded_files, inputs=[image_upload, image_files_state], outputs=[image_upload, image_files_state, selected_images])
                 clear_images_btn.click(fn=clear_uploaded_files, outputs=[image_upload, image_files_state, selected_images])
                 send_btn.click(
-                    fn=lambda *args: gr_chat_send(*args, generation_service=generation_service),
+                    fn=lambda key, *args: gr_chat_send(*args, generation_service=generation_service, openai_api_key=key),
                     inputs=[
+                        openai_api_key,
                         user_input,
                         image_files_state,
                         chatbot,
@@ -548,6 +608,17 @@ def create_gradio_app() -> gr.Blocks:
                     outputs=[chatbot, raw_messages_state, user_input, image_upload, image_files_state, selected_images, export_session_dir],
                 )
                 clear_btn.click(fn=gr_clear, outputs=[chatbot, raw_messages_state])
+
+                model_controls = [aspect_ratio, enable_search, temperature, top_p, top_k, max_output_tokens, model_info]
+                model_name.change(fn=model_controls_for_ui, inputs=[model_name, aspect_ratio, image_size], outputs=model_controls)
+                model_name.change(fn=model_image_size_for_ui, inputs=[model_name, image_size], outputs=image_size)
+                image_size.change(fn=model_controls_for_ui, inputs=[model_name, aspect_ratio, image_size], outputs=model_controls)
+                aspect_ratio.change(
+                    fn=lambda *args: model_controls_for_ui(*args)[-1],
+                    inputs=[model_name, aspect_ratio, image_size], outputs=model_info,
+                )
+                demo.load(fn=model_controls_for_ui, inputs=[model_name, aspect_ratio, image_size], outputs=model_controls)
+                demo.load(fn=model_image_size_for_ui, inputs=[model_name, image_size], outputs=image_size)
 
                 btn_save_preset.click(
                     fn=save_preset,
@@ -616,7 +687,7 @@ def create_gradio_app() -> gr.Blocks:
                             )
                             queue_concurrency = gr.Slider(label="并发数", minimum=1, maximum=8, value=1, step=1)
                         with gr.Accordion("参数数组", open=True):
-                            queue_model = gr.Dropdown(label="模型", choices=DEFAULT_MODEL_OPTIONS, value=DEFAULT_MODEL_OPTIONS[3])
+                            queue_model = gr.Dropdown(label="模型", choices=MODEL_CHOICES, value=DEFAULT_MODEL_OPTIONS[3])
                             queue_ar = gr.Textbox(label="宽高比", value="16:9")
                             queue_size = gr.Textbox(label="图片尺寸", value="4K")
                             queue_search = gr.Textbox(label="搜索 (0/1)", value="0")
@@ -626,7 +697,9 @@ def create_gradio_app() -> gr.Blocks:
                             queue_tokens = gr.Textbox(label="Max output tokens", value="8192")
                             queue_sys = gr.Textbox(label="System Instruction（系统指令）", lines=2)
                             queue_save_png = gr.Checkbox(label="保存生成参数到 PNG", value=True)
-                        queue_api_key = gr.Textbox(label="API Key（可选）", type="password")
+                        queue_api_key = gr.Textbox(label="Google API Key（可选）", type="password")
+                        gr.Markdown("GPT Image 使用页面顶部的 **OpenAI API Key**。宽高比支持 1:3 至 3:1；尺寸为 1K / 2K / 4K。Google Search 和采样参数仅用于 Gemini。")
+                        gr.Markdown("Nano Banana 2 / 2.1 支持 1K、2K、4K；2 Lite 仅支持 1K，最多 4096 输出 tokens，不支持搜索。")
                         queue_submit_btn = gr.Button("加入任务组")
                     with gr.Column(scale=5):
                         selected_group_id = gr.Dropdown(label="选择任务组", choices=[], value=None)
@@ -649,6 +722,7 @@ def create_gradio_app() -> gr.Blocks:
                         queue_gallery = gr.Gallery(label="队列结果", columns=3, height=520, object_fit="contain")
 
                 queue_outputs = [queue_table, selected_group_id, queue_log, queue_gallery]
+                queue_model.change(fn=queue_model_controls_for_ui, inputs=queue_model, outputs=[queue_size, queue_search, queue_tokens])
                 queue_images.change(
                     fn=merge_uploaded_files,
                     inputs=[queue_images, queue_image_files_state],
@@ -659,8 +733,9 @@ def create_gradio_app() -> gr.Blocks:
                     outputs=[queue_images, queue_image_files_state, queue_selected_images],
                 )
                 queue_submit_btn.click(
-                    fn=lambda *args: queue_submit(*args, queue_service=queue_service),
+                    fn=lambda key, *args: queue_submit(*args, queue_service=queue_service, openai_api_key=key),
                     inputs=[
+                        openai_api_key,
                         queue_prompt,
                         queue_image_files_state,
                         queue_batch,

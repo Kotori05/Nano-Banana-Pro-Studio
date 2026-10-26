@@ -4,7 +4,7 @@ import os
 import shutil
 from pathlib import Path
 
-from nbp.config import find_free_port, load_google_api_key_from_file
+from nbp.config import find_free_port, load_google_api_key_from_file, load_openai_api_key_from_file
 from nbp.ui import create_gradio_app
 
 
@@ -50,6 +50,7 @@ def main() -> None:
     print(f"[banana] allowed_paths: {allowed_paths}")
 
     load_google_api_key_from_file()
+    load_openai_api_key_from_file()
     patch_gradio_node_lookup()
     demo = create_gradio_app()
     port = find_free_port(7860, 7880, host="127.0.0.1")
@@ -58,6 +59,9 @@ def main() -> None:
         server_name="127.0.0.1",
         server_port=port,
         allowed_paths=allowed_paths,
+        blocked_paths=[str((app_root / name).resolve()) for name in (
+            "OPENAI_API_KEY.txt", "GOOGLE_CLOUD_API_KEY.txt", "GOOGLE_CLOUD_API_KEY.json", "service_account.json",
+        )],
     )
     print(f"[banana] Gradio running on http://127.0.0.1:{port}")
 

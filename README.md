@@ -7,6 +7,8 @@
 
 一个基于 **Gradio** 和 **Google GenAI SDK** 的本地 Gemini 图像生成工作台，重点支持 `gemini-3-pro-image-preview`、多图参考、PNG 参数读写、Markdown 记录导出和内置智能队列。
 
+现已支持 OpenAI GPT Image 文生图与参考图编辑，主页面和智能队列均可使用。
+
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Gradio](https://img.shields.io/badge/Gradio-5.23.2-orange)
 ![Vertex AI](https://img.shields.io/badge/Google-Vertex%20AI-4285F4)
@@ -14,6 +16,8 @@
 ## 主要功能
 
 - **Gemini 图像模型支持**：支持 `gemini-3-pro-image-preview`、`gemini-2.5-flash-image` 等图像模型。
+- **Nano Banana 2 系列**：支持 `gemini-3.1-flash-image`（2 正式版）、`gemini-nano-banana-2.1`（2.1）、`gemini-3.1-flash-lite-image`（2 Lite），并保留 2 的预览版；也支持 `gemini-3-pro-image`（Pro 正式版）。主页面和队列共用模型列表与图像调用配置。
+- **OpenAI 图像模型支持**：支持 `gpt-image-2`、`gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst`；Flare 侧重日常生成速度，Sunburst 侧重编辑精度。
 - **完整参数控制**：支持模型、宽高比、图片尺寸、Google Search、temperature、top_p、top_k、max_output_tokens、System Instruction 等参数。
 - **多图参考输入**：主页面和智能队列均支持多次拖拽追加参考图，并可单独清空待发送图片。
 - **参数预设与上次参数回读**：可保存常用参数预设，也可读取最近一次成功生成使用的参数和可读取到的参考图路径。
@@ -70,6 +74,17 @@ pip install gradio==5.23.2 google-genai==1.53.0 gradio-client protobuf google-ap
 
 也可以在页面中的 API Key 输入框临时填写，或通过环境变量 `GOOGLE_CLOUD_API_KEY` 提供。
 
+### OpenAI API Key
+
+在页面顶部的 **OpenAI API Key（主页面 / 智能队列共用）** 输入框填写密钥，然后选择 GPT Image 模型。也可通过环境变量 `OPENAI_API_KEY` 或根目录的 `OPENAI_API_KEY.txt` 提供纯文本密钥。优先级为页面填写 > 环境变量 > 文件；无需 Google 认证，也无需安装额外 SDK。
+
+- 无参考图时调用 `/v1/images/generations`，有参考图或对话历史图片时调用 `/v1/images/edits`。最多 16 张参考图，连续修改会携带此前生成的图片。
+- `1K / 2K / 4K` 分别按目标最大边 `1024 / 2048 / 3840` 换算，必要时调整以满足总像素范围；实际请求尺寸显示在界面中。例如 `16:9 + 4K` 为 `3840x2160`，`1:1 + 4K` 为 `2880x2880`。宽高比限 `1:3` 至 `3:1`，不支持长条图选项。超过 `2560x1440` 的尺寸为实验支持。
+- 质量使用 API 默认的 `auto`。System Instruction 会合并到提示词；Google Search、temperature、top_p、top_k、max_output_tokens 仅对 Gemini 生效。
+- 密钥不写入预设、PNG、上次参数或 Markdown 记录。队列任务使用提交时填写的 OpenAI Key；留空时使用环境变量 / 本地密钥文件。
+
+模型与接口依据 [OpenAI 官方图像文档](https://developers.openai.com/api/docs/guides/image-generation)。截至 2026-10-27，官方模型目录中较新图像模型为 GPT Image 2.5 Flare / Sunburst；`chatgpt-image-latest` 已标记弃用，未加入默认列表。
+
 ## 启动
 
 当前唯一推荐启动入口是：
@@ -83,7 +98,8 @@ python launch.py
 ## 使用说明
 
 - 主页面默认参数为 `16:9`、`4K`、temperature `0.9`。
-- `gemini-3-pro-image-preview` 目前可能不支持 System Instruction；这类内容建议直接写入 Prompt。其他模型可继续使用 System Instruction 输入框。
+- Gemini 图像模型的 System Instruction 自动合并到 Prompt，避免不受支持的 `system` 消息角色；文本模型使用原生 `system_instruction` 配置。
+- Nano Banana 2 / 2.1 支持 1K、2K、4K 以及长条图比例。2 Lite 仅支持 1K、最多 4096 输出 tokens 且不支持搜索；主页面和队列会自动应用这些限制。模型能力以 [Google 官方文档](https://ai.google.dev/gemini-api/docs/image-generation) 为准。
 - PNG 参数默认开启保存；关闭“保存生成参数到 PNG”后仍会保存图片，但 PNG 参数读取页会提示无参数。
 - PNG 参数读取页不会写入或展示 API key、凭证路径等敏感信息。
 - 智能队列中，“加入任务组”只负责入队；“继续 / 启动队列”负责开始或恢复执行。
@@ -111,6 +127,7 @@ python launch.py
 ## 安全提醒
 
 - 不要提交 `GOOGLE_CLOUD_API_KEY.json`、`GOOGLE_CLOUD_API_KEY.txt`、API key 或其他凭证文件。
+- 不要提交 `OPENAI_API_KEY.txt`；该文件已加入 `.gitignore`。
 - PNG 参数、上次参数和 Markdown 记录不会主动写入 API key。
 
 ## 贡献

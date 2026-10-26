@@ -10,15 +10,42 @@ from typing import Any
 CONFIG_PATH = Path("config.json")
 LAST_PARAMS_PATH = Path("last_params.json")
 
-DEFAULT_MODEL_OPTIONS = [
-    "gemini-2.5-flash",
-    "gemini-3.1-pro-preview",
-    "gemini-3-flash-preview",
+OPENAI_IMAGE_MODELS = [
+    "gpt-image-2",
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst",
+]
+
+NANO_BANANA_2_LITE_MODEL = "gemini-3.1-flash-lite-image"
+
+# Keep the UI and request routing on the same image model catalogue.
+GEMINI_IMAGE_MODELS = [
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
     "gemini-nano-banana-2.1",
     "gemini-2.5-flash-image",
+    "gemini-3.1-flash-image",
+    NANO_BANANA_2_LITE_MODEL,
+    "gemini-3-pro-image",
 ]
+
+MODEL_LABELS = {
+    "gemini-nano-banana-2.1": "Nano Banana 2.1 · gemini-nano-banana-2.1",
+    "gemini-3.1-flash-image": "Nano Banana 2 · gemini-3.1-flash-image",
+    "gemini-3.1-flash-image-preview": "Nano Banana 2（预览版）· gemini-3.1-flash-image-preview",
+    NANO_BANANA_2_LITE_MODEL: "Nano Banana 2 Lite · gemini-3.1-flash-lite-image",
+    "gemini-3-pro-image": "Nano Banana Pro · gemini-3-pro-image",
+}
+
+DEFAULT_MODEL_OPTIONS = [
+    "gemini-2.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+    *GEMINI_IMAGE_MODELS,
+    *OPENAI_IMAGE_MODELS,
+]
+
+MODEL_CHOICES = [(MODEL_LABELS.get(model, model), model) for model in DEFAULT_MODEL_OPTIONS]
 
 ASPECT_RATIO_OPTIONS = [
     "16:9 横版风景 5504x3072",
@@ -84,6 +111,21 @@ def load_google_api_key_from_file() -> None:
                 print(f"[INFO] Loaded API key from {api_key_txt_path.name}")
         except Exception as exc:
             print(f"[ERROR] Failed to read API key: {exc}")
+
+
+def load_openai_api_key_from_file() -> None:
+    """Allow local credentials without including them in generation parameters."""
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return
+    key_path = Path("OPENAI_API_KEY.txt")
+    if key_path.is_file():
+        try:
+            key = key_path.read_text(encoding="utf-8-sig").strip()
+            if key:
+                os.environ["OPENAI_API_KEY"] = key
+                print(f"[INFO] Loaded OpenAI API key from {key_path.name}")
+        except (OSError, UnicodeError):
+            print(f"[WARN] Could not read {key_path.name}")
 
 
 def load_presets_from_config() -> dict[str, Any]:

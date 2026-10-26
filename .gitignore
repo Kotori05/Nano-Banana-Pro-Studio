@@ -15,11 +15,13 @@ venv/
 # ⚠️ 绝对不要上传密钥文件！！！
 GOOGLE_CLOUD_API_KEY.json
 GOOGLE_CLOUD_API_KEY.txt
+OPENAI_API_KEY.txt
 service_account.json
 *.json
 
 # 忽略生成的图片输出文件夹
 outputs/
+exports/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

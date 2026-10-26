@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .config import ASPECT_RATIO_OPTIONS, DEFAULT_MODEL_OPTIONS, IMAGE_SIZE_OPTIONS, LAST_PARAMS_PATH
+from .config import ASPECT_RATIO_OPTIONS, DEFAULT_MODEL_OPTIONS, IMAGE_SIZE_OPTIONS, LAST_PARAMS_PATH, NANO_BANANA_2_LITE_MODEL
 
 
 APP_JSON_PREFIX = "NanoBananaParams:"
@@ -54,6 +54,10 @@ class GenerationParams:
         self.max_output_tokens = int(self.max_output_tokens)
         self.enable_search = bool(self.enable_search)
         self.save_png_parameters = bool(self.save_png_parameters)
+        if self.model_name == NANO_BANANA_2_LITE_MODEL:
+            self.image_size = "1K"
+            self.enable_search = False
+            self.max_output_tokens = min(self.max_output_tokens, 4096)
         return self
 
 

@@ -43,6 +43,10 @@ TRANSIENT_ERROR_MARKERS = (
     "connection",
     "timeout",
     "timed out",
+    "HTTP 500",
+    "HTTP 502",
+    "HTTP 503",
+    "HTTP 504",
 )
 
 
@@ -94,6 +98,7 @@ class QueueService:
         base_params: GenerationParams,
         param_arrays: dict[str, str],
         api_key: str,
+        openai_api_key: str = "",
     ) -> None:
         batch_count = max(1, int(batch_count or 1))
         items = []
@@ -140,6 +145,7 @@ class QueueService:
             "strategy": strategy,
             "ref_images": list(ref_images or []),
             "api_key": api_key,
+            "openai_api_key": openai_api_key,
             "base_params": copy.deepcopy(base_params),
             "items": items,
             "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -354,6 +360,7 @@ class QueueService:
                 item["params"],
                 [],
                 group["ref_images"],
+                openai_api_key=group.get("openai_api_key", ""),
             )
             start = time.monotonic()
             try:
